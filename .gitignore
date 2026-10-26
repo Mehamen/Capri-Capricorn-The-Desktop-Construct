@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Виртуальные окружения
+.venv/
+.venv-*/
+venv/
+
+# Логи и бэкапы
+capri.log
+*.orig
+*.orig.*
+README.orig.md
+
+# Системное
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

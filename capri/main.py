@@ -12,6 +12,8 @@ from capri.character.controller import CharacterController
 from capri.desktop.window       import CapriWindow
 from capri.desktop.chat_window  import ChatWindow
 from capri.ai.model_client      import OllamaClient
+from capri.system.single_instance import SingleInstance
+from capri.system                 import ollama_service
 
 
 def get_assets_dir() -> str:
@@ -56,6 +58,15 @@ def main() -> None:
     app.setApplicationName("Capri")
     app.setQuitOnLastWindowClosed(False)
 
+    # Only one Capri at a time (autostart + manual launch)
+    instance = SingleInstance()
+    if not instance.acquire():
+        print("Capri is already running.")
+        return
+
+    # At Windows startup Capri may launch before Ollama — start it if needed
+    ollama_service.ensure_running_async()
+
     assets_dir = get_assets_dir()
     controller = CharacterController(assets_dir)
     ai_client  = OllamaClient()
@@ -70,6 +81,12 @@ def main() -> None:
 
     capri_win.set_chat_window(chat_win)
     capri_win.show()
+
+    def _bring_back():
+        capri_win.show()
+        capri_win.raise_()
+        capri_win.activateWindow()
+    instance.on_activate = _bring_back
 
     print("Capri running. Click her to open chat. Right-click to quit.")
     if ptt:

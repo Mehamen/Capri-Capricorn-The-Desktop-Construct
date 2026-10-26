@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from capri.character.controller import CharacterController, CapriState
+from capri.system import autostart
 
 
 # ── tuneable constants ────────────────────────────────────────────────
@@ -380,9 +381,23 @@ class CapriWindow(QWidget):
             sleep.triggered.connect(self._go_to_sleep)
 
         menu.addSeparator()
+        if autostart.is_supported():
+            auto = menu.addAction("↻  Start with Windows")
+            auto.setCheckable(True)
+            auto.setChecked(autostart.is_enabled())
+            auto.toggled.connect(self._toggle_autostart)
+            menu.addSeparator()
+
         quit_action = menu.addAction("✕  Quit")
         quit_action.triggered.connect(QApplication.quit)
         menu.exec(event.globalPos())
+
+    def _toggle_autostart(self, on: bool) -> None:
+        try:
+            autostart.set_enabled(on)
+            print(f"[Autostart] {'enabled' if on else 'disabled'}")
+        except OSError as e:
+            print(f"[Autostart] Failed: {e}")
 
     # ── Qt paint override — keep background transparent ───────────────
 

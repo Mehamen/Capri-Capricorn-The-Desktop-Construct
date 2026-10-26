@@ -78,6 +78,7 @@ class OllamaClient:
             "model":    MODEL_NAME,
             "messages": messages,
             "stream":   True,
+            "keep_alive": "30m",   # keep model in memory between messages
         }).encode()
 
         try:
@@ -89,7 +90,7 @@ class OllamaClient:
             )
             full_reply = ""
 
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=300) as resp:
                 for raw_line in resp:
                     line = raw_line.decode().strip()
                     if not line:
