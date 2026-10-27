@@ -18,3 +18,9 @@ README.orig.md
 .idea/
 Thumbs.db
 desktop.ini
+
+# Образцы для генерации спрайтов
+pixellab/
+
+# Бэкапы оригинальных спрайтов
+assets/character/_original/

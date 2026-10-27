@@ -29,6 +29,7 @@ Capri — анимированный персонаж, который живёт
 | **Автозапуск с Windows** — галочка «↻ Start with Windows» в меню по правому клику на Capri. | `capri/system/autostart.py`, `capri/desktop/window.py` |
 | **Запуск без консоли** — `run_capri.pyw`, логи пишутся в `capri.log`. | `run_capri.pyw` |
 | **Ollama запускается сама**, если ещё не запущена при старте Capri. | `capri/system/ollama_service.py` |
+| **Новые кадры: радость, сон, «машет рукой»** — сгенерированы по мотивам оригинального арта Juliowiwiwiwi и подогнаны по размеру и положению под остальные кадры, чтобы Capri не «прыгала». Перед сном Capri зевает (кадры зевка — оригинальные «спящие» кадры автора), потом засыпает с медленным «дыханием». При открытии чата Capri машет рукой. | `assets/character/`, `capri/character/controller.py`, `capri/desktop/window.py` |
 | **Только одна Capri** — повторный запуск не создаёт вторую копию, а показывает уже открытую. | `capri/system/single_instance.py`, `capri/main.py` |
 
 ### В планах

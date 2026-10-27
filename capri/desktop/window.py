@@ -29,6 +29,9 @@ WINDOW_SIZE       = QSize(200, 200)   # px — adjust to your art size
 BLINK_INTERVAL_MS = 4_000            # how often she blinks (ms)
 BLINK_HOLD_MS     = 150              # how long blink image shows
 HAPPY_HOLD_MS     = 1_200            # how long happy expression stays
+WAVE_HOLD_MS      = 1_500            # how long she waves when chat opens
+YAWN_FRAME_MS     = 350              # yawn animation speed (ms per frame)
+YAWN_LOOPS        = 2                # how many times the yawn plays before sleep
 SLEEP_AFTER_MS    = 60_000           # idle-to-sleep timeout (1 min)
 # ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +65,27 @@ class CapriWindow(QWidget):
                 print(f"[CapriWindow] Could not load idle frame: {image_path}")
 
         self._idle_frame_index = 0
+
+        # Blink frames — one per idle frame, so she blinks without jumping
+        self._blink_frames = []
+        for filename in (
+            "capri_blink1.png",
+            "capri_blink2.png",
+            "capri_blink3.png",
+        ):
+            pixmap = QPixmap(str(Path(self.controller.assets_dir) / filename))
+            if not pixmap.isNull():
+                self._blink_frames.append(pixmap)
+        if len(self._blink_frames) != len(self._idle_frames):
+            self._blink_frames = []   # fall back to capri_blink.png
+
+        # Yawn frames — played once before she falls asleep
+        self._yawn_frames = []
+        for filename in ("capri_yawn0.png", "capri_yawn1.png", "capri_yawn2.png"):
+            pixmap = QPixmap(str(Path(self.controller.assets_dir) / filename))
+            if not pixmap.isNull():
+                self._yawn_frames.append(pixmap)
+        self._yawn_step = 0
 
         self._sleeping_frames = []
 
@@ -98,12 +122,17 @@ class CapriWindow(QWidget):
         """Show or hide the chat panel when Capri is clicked."""
         if self._chat_window is None:
             return
+        self._cancel_yawn()
         if self._chat_window.isVisible():
             self._chat_window.hide()
         else:
             self._chat_window.show()
             self._chat_window.raise_()
             self._chat_window.activateWindow()
+            # say hi when the chat opens
+            if not self._is_sleeping:
+                self.controller.set_state(CapriState.WAVE)
+                self._wave_reset.start(WAVE_HOLD_MS)
         self._reset_sleep_timer()
 
     # ── window setup ─────────────────────────────────────────────────
@@ -155,6 +184,15 @@ class CapriWindow(QWidget):
         self._happy_reset.setSingleShot(True)
         self._happy_reset.timeout.connect(self._end_happy)
 
+        # Yawn timer — steps through the yawn, then she falls asleep
+        self._yawn_timer = QTimer(self)
+        self._yawn_timer.timeout.connect(self._animate_yawn)
+
+        # Wave-reset timer — returns to IDLE after waving hello
+        self._wave_reset = QTimer(self)
+        self._wave_reset.setSingleShot(True)
+        self._wave_reset.timeout.connect(self._end_wave)
+
         # Sleep timer — triggers sleep after prolonged inactivity
         self._sleep_timer = QTimer(self)
         self._sleep_timer.setSingleShot(True)
@@ -191,8 +229,37 @@ class CapriWindow(QWidget):
             self.controller.current_state() == CapriState.IDLE
             and self._idle_frames
         ):
-            self._idle_frame_index = 0
-            pixmap = self._idle_frames[0].scaled(
+            # keep the current frame (no jump back to frame 0 after a blink)
+            self._idle_frame_index %= len(self._idle_frames)
+            pixmap = self._idle_frames[self._idle_frame_index].scaled(
+                WINDOW_SIZE,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            self.image_label.setPixmap(pixmap)
+            return
+
+        # Yawn: current frame of the yawn animation
+        if (
+            self.controller.current_state() == CapriState.YAWN
+            and self._yawn_frames
+        ):
+            idx = self._yawn_step % len(self._yawn_frames)
+            pixmap = self._yawn_frames[idx].scaled(
+                WINDOW_SIZE,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            self.image_label.setPixmap(pixmap)
+            return
+
+        # Blink: closed-eye version of the idle frame currently on screen
+        if (
+            self.controller.current_state() == CapriState.BLINK
+            and self._blink_frames
+        ):
+            idx = self._idle_frame_index % len(self._blink_frames)
+            pixmap = self._blink_frames[idx].scaled(
                 WINDOW_SIZE,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
@@ -294,7 +361,9 @@ class CapriWindow(QWidget):
         self._blink_timer.start(BLINK_INTERVAL_MS + jitter)
 
     def _do_blink(self) -> None:
-        if self._is_sleeping:
+        # only blink from idle — don't interrupt happy / wave
+        if self._is_sleeping or self.controller.current_state() != CapriState.IDLE:
+            self._schedule_next_blink()
             return
         self.controller.set_state(CapriState.BLINK)
         self._blink_reset.start(BLINK_HOLD_MS)
@@ -304,11 +373,49 @@ class CapriWindow(QWidget):
         if self.controller.current_state() == CapriState.BLINK:
             self.controller.set_state(CapriState.IDLE)
 
+    def _end_wave(self) -> None:
+        if self.controller.current_state() == CapriState.WAVE:
+            self.controller.set_state(CapriState.IDLE)
+
     def _end_happy(self) -> None:
         if self.controller.current_state() == CapriState.HAPPY:
             self.controller.set_state(CapriState.IDLE)
 
     def _go_to_sleep(self) -> None:
+        """Yawn first (if we have the frames), then fall asleep."""
+        if self._is_sleeping or self._yawn_timer.isActive():
+            return
+        self._blink_timer.stop()
+        if not self._yawn_frames:
+            self._fall_asleep()
+            return
+        self._yawn_step = 0
+        self.controller.set_state(CapriState.YAWN)
+        self._yawn_timer.start(YAWN_FRAME_MS)
+
+    def _animate_yawn(self) -> None:
+        if self.controller.current_state() != CapriState.YAWN:
+            self._yawn_timer.stop()
+            return
+        self._yawn_step += 1
+        if self._yawn_step >= len(self._yawn_frames) * YAWN_LOOPS:
+            self._yawn_timer.stop()
+            self._fall_asleep()
+            return
+        idx = self._yawn_step % len(self._yawn_frames)
+        self.image_label.setPixmap(self._yawn_frames[idx].scaled(
+            WINDOW_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation,
+        ))
+
+    def _cancel_yawn(self) -> None:
+        """User did something mid-yawn — she stays awake."""
+        if self._yawn_timer.isActive():
+            self._yawn_timer.stop()
+            self._schedule_next_blink()
+            if self.controller.current_state() == CapriState.YAWN:
+                self.controller.set_state(CapriState.IDLE)
+
+    def _fall_asleep(self) -> None:
         self._is_sleeping = True
         self._blink_timer.stop()
         self.controller.set_state(CapriState.SLEEPING)
@@ -354,6 +461,7 @@ class CapriWindow(QWidget):
     def mouseDoubleClickEvent(self, event) -> None:
         """Double-click = poke = happy reaction."""
         if event.button() == Qt.LeftButton and not self._is_sleeping:
+            self._cancel_yawn()
             self.controller.set_state(CapriState.HAPPY)
             self._happy_reset.start(HAPPY_HOLD_MS)
             self._reset_sleep_timer()

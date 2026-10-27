@@ -13,6 +13,8 @@ class CapriState(Enum):
     HAPPY    = auto()
     BLINK    = auto()
     SLEEPING = auto()
+    WAVE     = auto()
+    YAWN     = auto()
 
 
 # Maps each state to a filename inside assets/character/
@@ -21,6 +23,8 @@ STATE_IMAGES = {
     CapriState.HAPPY:    "capri_happy.png",
     CapriState.BLINK:    "capri_blink.png",
     CapriState.SLEEPING: "capri_sleeping.png",
+    CapriState.WAVE:     "capri_wave.png",
+    CapriState.YAWN:     "capri_yawn0.png",
 }
 
 # Fallback order: if a file is missing, try these states instead
