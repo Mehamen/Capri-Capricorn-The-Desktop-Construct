@@ -105,6 +105,7 @@ class ChatWindow(QWidget):
         self._ptt      = ptt    # NEW
         self._thinking = False
         self._bridge   = _SignalBridge()
+        self._commands = None   # PC commands («открой стим»), set by main.py
 
         self._setup_window()
         self._setup_ui()
@@ -277,7 +278,20 @@ class ChatWindow(QWidget):
         self._input.clear()
         self._dispatch_message(text)   # CHANGED: extracted to shared method
 
+    def set_commands(self, runner) -> None:
+        self._commands = runner
+
     def _dispatch_message(self, text: str):   # NEW: shared by text + voice
+        # PC commands («открой стим») are done right away, without the AI
+        if self._commands is not None:
+            try:
+                reply = self._commands.try_handle(text)
+            except Exception as e:
+                reply = f"ошибка команды: {e}"
+            if reply is not None:
+                self._append_user(text)
+                self._append_capri(reply)
+                return
         self._append_user(text)
         self._start_thinking()
         self._ai.send(
@@ -369,6 +383,37 @@ class ChatWindow(QWidget):
             f'font-size:{FONT_SIZE}px; white-space: pre-wrap;">{escaped}<br></span>'
         )
         self._log.moveCursor(QTextCursor.End)
+
+    # ── voice input («Капри …») ──────────────────────────────────────
+
+    def notify_wake_word(self):
+        """She heard her name and is recording the command."""
+        self._append_system("🎙 слушаю…")
+        self._mic_label.setVisible(True)
+        if not self._thinking:
+            self._set_status("LISTENING", C_PINK)
+
+    def notify_processing(self):
+        self._mic_label.setVisible(False)
+        if not self._thinking:
+            self._set_status("TRANSCRIBING", C_ACCENT)
+
+    def on_voice_command(self, text: str):
+        self._mic_label.setVisible(False)
+        if self._thinking:
+            self._append_system("я ещё отвечаю — повтори через секунду")
+            return
+        self._set_status("CONNECTED", C_GREEN)
+        self._dispatch_message(text)
+
+    def notify_nothing_heard(self):
+        self._mic_label.setVisible(False)
+        if not self._thinking:
+            self._set_status("CONNECTED", C_GREEN)
+        self._append_system("ничего не услышала")
+
+    def notify_info(self, text: str):
+        self._append_system(text)
 
     def _append_system(self, text: str):
         escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

@@ -14,6 +14,9 @@ from capri.desktop.chat_window  import ChatWindow
 from capri.ai.model_client      import OllamaClient
 from capri.system.single_instance import SingleInstance
 from capri.system                 import ollama_service
+from capri.system.commands        import CommandRunner
+from capri.voice                  import wake_word
+from capri                        import settings
 
 
 def get_assets_dir() -> str:
@@ -80,6 +83,22 @@ def main() -> None:
     )
 
     capri_win.set_chat_window(chat_win)
+    chat_win.set_commands(CommandRunner())   # «открой стим», «найди …»
+
+    # «Капри» voice input: wake word → Whisper → chat
+    voice = None
+    if wake_word.is_available():
+        from capri.voice.voice_input import VoiceInput
+        voice = VoiceInput(enabled=settings.load()["wake_word"])
+        voice.listening.connect(capri_win.on_wake_word)
+        voice.processing.connect(chat_win.notify_processing)
+        voice.heard.connect(chat_win.on_voice_command)
+        voice.nothing.connect(chat_win.notify_nothing_heard)
+        voice.info.connect(chat_win.notify_info)
+    else:
+        print("[Wake] Not installed — run: pip install vosk")
+    wake = voice.listener if voice else None
+    capri_win.set_wake_listener(wake)
     capri_win.show()
 
     def _bring_back():

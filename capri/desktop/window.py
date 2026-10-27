@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from capri.character.controller import CharacterController, CapriState
 from capri.system import autostart
+from capri import settings
 
 
 # ── tuneable constants ────────────────────────────────────────────────
@@ -48,6 +49,7 @@ class CapriWindow(QWidget):
         self._drag_start_pos: QPoint | None = None
         self._press_global_pos: QPoint | None = None
         self._chat_window = None
+        self._wake = None          # «Капри» listener, set by main.py
         self._is_sleeping = False
         self._idle_frames = []
 
@@ -117,6 +119,29 @@ class CapriWindow(QWidget):
     def set_chat_window(self, chat_window) -> None:
         """Attach the chat panel created by main.py."""
         self._chat_window = chat_window
+
+    def set_wake_listener(self, listener) -> None:
+        self._wake = listener
+
+    def on_wake_word(self) -> None:
+        """Someone said «Капри» — wake up / react and open the chat."""
+        self._cancel_yawn()
+        if self._is_sleeping:
+            self._wake_up()
+        else:
+            self.controller.set_state(CapriState.HAPPY)
+            self._happy_reset.start(HAPPY_HOLD_MS)
+        self._reset_sleep_timer()
+        if self._chat_window is not None:
+            if not self._chat_window.isVisible():
+                self._chat_window.show()
+                self._chat_window.raise_()
+            self._chat_window.notify_wake_word()
+
+    def _toggle_wake(self, on: bool) -> None:
+        if self._wake:
+            self._wake.set_enabled(on)
+        settings.save("wake_word", on)
 
     def _toggle_chat(self) -> None:
         """Show or hide the chat panel when Capri is clicked."""
@@ -489,6 +514,11 @@ class CapriWindow(QWidget):
             sleep.triggered.connect(self._go_to_sleep)
 
         menu.addSeparator()
+        if self._wake is not None:
+            mic = menu.addAction("🎙  Listen for «Капри»")
+            mic.setCheckable(True)
+            mic.setChecked(self._wake.is_enabled())
+            mic.toggled.connect(self._toggle_wake)
         if autostart.is_supported():
             auto = menu.addAction("↻  Start with Windows")
             auto.setCheckable(True)
