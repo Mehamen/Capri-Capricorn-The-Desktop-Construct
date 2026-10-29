@@ -22,6 +22,8 @@ import urllib.parse
 import webbrowser
 from pathlib import Path
 
+from capri.system.app_control import AppControls
+
 APPS_FILE = Path(__file__).resolve().parents[2] / "apps.json"
 
 OPEN_VERBS   = r"(?:открой|открыть|запусти|запустить|включи|включить|зайди на|зайди в|перейди на)"
@@ -100,6 +102,7 @@ class CommandRunner:
         self._log = log
         self._user = self._load_user_apps()
         self._shortcuts = self._scan_shortcuts()
+        self._controls = AppControls(launch_app=self._open_by_name, log=log)
         self._log(f"[Commands] {len(self._shortcuts)} shortcuts found, "
                   f"{len(self._user)} own names in apps.json")
 
@@ -218,9 +221,25 @@ class CommandRunner:
 
     # ── public ───────────────────────────────────────────────────────
 
+    def _open_by_name(self, name: str) -> bool:
+        hit = self._lookup(name)
+        if not hit:
+            return False
+        try:
+            self._launch(hit[1])
+            return True
+        except Exception as e:
+            self._log(f"[Commands] failed to open {hit[1]!r}: {e}")
+            return False
+
     def try_handle(self, text: str):
         """If text is a command — do it and return Capri's reply. Else None."""
         t = _norm(text, keep_commas=True).strip(" ,")
+
+        # controlling apps: music, Discord voice …
+        reply = self._controls.try_handle(t)
+        if reply is not None:
+            return reply
 
         m = re.match(rf"^(?:пожалуйста )?{SEARCH_VERBS}(?: в (?:гугле|google|интернете|браузере))? (.+)$", t)
         if m:
